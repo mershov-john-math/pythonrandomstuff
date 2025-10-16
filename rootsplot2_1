@@ -1,0 +1,141 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from collections import deque
+
+max_degree = 15  # You can raise this for deeper zooms
+
+# Function to check if a root is inside the region
+def root_in_region(r, xmin, xmax, ymin, ymax):
+    return xmin <= r.real <= xmax and ymin <= r.imag <= ymax
+
+# Optimized root generator using iterative approach with pruning and memoization
+def generate_roots_in_region_iterative(max_degree, xmin, xmax, ymin, ymax):
+    stack = deque()
+    stack.append([1])
+    visited = set()
+    collected_roots = []
+
+    while stack:
+        current_poly = stack.pop()
+
+        poly_tuple = tuple(current_poly)
+        if poly_tuple in visited:
+            continue
+        visited.add(poly_tuple)
+
+        if len(current_poly) > max_degree + 1:
+            continue
+
+        try:
+            roots = np.roots(current_poly)
+        except np.linalg.LinAlgError:
+            continue
+
+        roots_in_region = [r for r in roots if root_in_region(r, xmin, xmax, ymin, ymax)]
+        if not roots_in_region and len(current_poly) > 2:
+            continue
+
+        collected_roots.extend(roots_in_region)
+
+        stack.append(current_poly + [0])
+        stack.append(current_poly + [1])
+
+    return collected_roots
+
+# Main class for interactive plot
+class RootExplorer:
+    def __init__(self, max_degree):
+        self.max_degree = max_degree
+        self.fig, self.ax = plt.subplots()
+        self.roots_plot = None
+        self.roots = []
+        self.rect_selector = None
+        self.zoom_rect = None
+        self.press_event = None
+
+        self.init_plot()
+        self.connect_events()
+        plt.show()
+
+    def init_plot(self):
+        self.xmin, self.xmax = -2, 2
+        self.ymin, self.ymax = -2, 2
+        self.draw_region(self.xmin, self.xmax, self.ymin, self.ymax)
+
+    def connect_events(self):
+        self.cid_press = self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.cid_release = self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+        self.cid_motion = self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
+
+    def on_press(self, event):
+        if event.button == 3:  # Right-click to zoom out
+            self.zoom_out()
+            return
+        if event.inaxes != self.ax:
+            return
+        self.press_event = event
+        self.zoom_rect = Rectangle((event.xdata, event.ydata), 0, 0, linewidth=1,
+                                   edgecolor='red', facecolor='none', linestyle='--')
+        self.ax.add_patch(self.zoom_rect)
+
+    def on_motion(self, event):
+        if self.press_event is None or event.inaxes != self.ax:
+            return
+        x0, y0 = self.press_event.xdata, self.press_event.ydata
+        x1, y1 = event.xdata, event.ydata
+        self.zoom_rect.set_width(x1 - x0)
+        self.zoom_rect.set_height(y1 - y0)
+        self.zoom_rect.set_xy((x0, y0))
+        self.fig.canvas.draw_idle()
+
+    def on_release(self, event):
+        if self.press_event is None or event.inaxes != self.ax:
+            return
+
+        x0, y0 = self.press_event.xdata, self.press_event.ydata
+        x1, y1 = event.xdata, event.ydata
+
+        xmin, xmax = sorted([x0, x1])
+        ymin, ymax = sorted([y0, y1])
+
+        self.press_event = None
+        self.zoom_rect.remove()
+        self.zoom_rect = None
+
+        if abs(xmax - xmin) < 1e-6 or abs(ymax - ymin) < 1e-6:
+            return
+
+        self.draw_region(xmin, xmax, ymin, ymax)
+
+    def zoom_out(self):
+        # Reset to original view
+        self.draw_region(-2, 2, -2, 2)
+
+    def draw_region(self, xmin, xmax, ymin, ymax):
+        print(f"Zooming into: x ∈ [{xmin}, {xmax}], y ∈ [{ymin}, {ymax}]")
+        self.xmin, self.xmax = xmin, xmax
+        self.ymin, self.ymax = ymin, ymax
+
+        self.ax.clear()
+        roots = generate_roots_in_region_iterative(self.max_degree, xmin, xmax, ymin, ymax)
+
+        if not roots:
+            print("No roots found in region.")
+        else:
+            real_parts = np.real(roots)
+            imag_parts = np.imag(roots)
+            self.ax.scatter(real_parts, imag_parts, s=0.5, color='blue')
+
+        self.ax.set_xlim(xmin, xmax)
+        self.ax.set_ylim(ymin, ymax)
+        self.ax.set_title(f"Binary Polynomial Roots (deg ≤ {self.max_degree})")
+        self.ax.set_xlabel("Re")
+        self.ax.set_ylabel("Im")
+        self.ax.set_aspect('equal', adjustable='box')
+        self.ax.grid(True, alpha=0.3)
+        self.fig.canvas.draw_idle()
+
+# Launch the tool
+if __name__ == "__main__":
+    RootExplorer(max_degree=15)
