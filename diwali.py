@@ -4,7 +4,7 @@ import signal
 import sys
 
 url = "https://www.youtube.com/watch?v=pWphVkRzhtY"
-num_windows = 10000
+num_windows = 10
 
 
 
